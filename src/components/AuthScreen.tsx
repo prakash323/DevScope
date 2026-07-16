@@ -9,9 +9,10 @@ import { User } from '../types';
 
 interface AuthScreenProps {
   onLogin: (user: User) => void;
+  onGoogleSignIn?: () => Promise<void>;
 }
 
-export default function AuthScreen({ onLogin }: AuthScreenProps) {
+export default function AuthScreen({ onLogin, onGoogleSignIn }: AuthScreenProps) {
   const [isRegistering, setIsRegistering] = useState(false);
   const [email, setEmail] = useState('');
   const [fullName, setFullName] = useState('');
@@ -155,18 +156,22 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
               <span className="text-gray-700 font-sans text-xs">GitHub Auth</span>
             </button>
 
-            <button
+             <button
               onClick={() => {
-                setEmail('vitap.student@university.edu');
-                setFullName('VIT-AP Student');
-                setIsRegistering(false);
-                onLogin({
-                  id: 'google-oauth-user',
-                  email: 'vitap.student@university.edu',
-                  fullName: 'VIT-AP Placement Candidate',
-                  avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150',
-                  joinedAt: 'July 2026'
-                });
+                if (onGoogleSignIn) {
+                  onGoogleSignIn();
+                } else {
+                  setEmail('vitap.student@university.edu');
+                  setFullName('VIT-AP Student');
+                  setIsRegistering(false);
+                  onLogin({
+                    id: 'google-oauth-user',
+                    email: 'vitap.student@university.edu',
+                    fullName: 'VIT-AP Placement Candidate',
+                    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150',
+                    joinedAt: 'July 2026'
+                  });
+                }
               }}
               className="flex items-center justify-center gap-2 py-2 px-3 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 transition bg-white"
             >

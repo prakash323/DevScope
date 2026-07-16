@@ -17,7 +17,9 @@ import {
   Layers, 
   Download,
   Flame,
-  LayoutDashboard
+  LayoutDashboard,
+  Mail,
+  Briefcase
 } from 'lucide-react';
 
 import { DevScopeState, User as UserType, RoadmapItem, SkillValidation, GitHubProfile, LeetCodeProfile, ResumeData, ActivityLog } from './types';
@@ -30,6 +32,13 @@ import ValidationPanel from './components/ValidationPanel';
 import ReadinessPanel from './components/ReadinessPanel';
 import RoadmapPanel from './components/RoadmapPanel';
 import PDFReport from './components/PDFReport';
+import WorkspacePanel from './components/WorkspacePanel';
+import JobOpportunitiesPanel from './components/JobOpportunitiesPanel';
+
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db, initAuth, googleSignIn, logout } from './lib/firebase';
+import { scheduleCalendarEvent } from './lib/workspace';
+
 
 // Starting initial mock activities for a pristine placeholder state
 const defaultActivities: ActivityLog[] = [
@@ -63,11 +72,105 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState('overview');
   const [showReport, setShowReport] = useState(false);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+
+  // Initialize Authentication & Session Restore on Mount
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      async (firebaseUser, token) => {
+        setAccessToken(token);
+        
+        try {
+          const docRef = doc(db, 'users', firebaseUser.uid);
+          const docSnap = await getDoc(docRef);
+          
+          const parsedUser: UserType = {
+            id: firebaseUser.uid,
+            email: firebaseUser.email || '',
+            fullName: firebaseUser.displayName || firebaseUser.email?.split('@')[0].toUpperCase() || 'STUDENT',
+            avatarUrl: firebaseUser.photoURL || `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150`,
+            joinedAt: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+          };
+
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setState({
+              user: parsedUser,
+              github: data.github || null,
+              leetcode: data.leetcode || null,
+              resume: data.resume || null,
+              skillValidation: data.skillValidation || [],
+              roleReadiness: data.roleReadiness || [],
+              companyReadiness: data.companyReadiness || [],
+              roadmap: data.roadmap || null,
+              activities: data.activities || [],
+              overallScore: data.overallScore || 0
+            });
+          } else {
+            setState(prev => ({
+              ...prev,
+              user: parsedUser
+            }));
+          }
+        } catch (err) {
+          console.error('Firestore connection restore error:', err);
+          const parsedUser: UserType = {
+            id: firebaseUser.uid,
+            email: firebaseUser.email || '',
+            fullName: firebaseUser.displayName || 'STUDENT',
+            avatarUrl: firebaseUser.photoURL || `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150`,
+            joinedAt: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+          };
+          setState(prev => ({ ...prev, user: parsedUser }));
+        }
+      },
+      () => {
+        setAccessToken(null);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
 
   // Sync state to local storage for robust persistence across reloads
   useEffect(() => {
     localStorage.setItem('devscope_workspace_state', JSON.stringify(state));
   }, [state]);
+
+  // Sync state to Firestore database securely
+  useEffect(() => {
+    if (!state.user) return;
+    
+    const syncToCloud = async () => {
+      try {
+        const docRef = doc(db, 'users', state.user!.id);
+        await setDoc(docRef, {
+          uid: state.user!.id,
+          fullName: state.user!.fullName,
+          email: state.user!.email,
+          gitUsername: state.github?.username || '',
+          leetcodeUsername: state.leetcode?.username || '',
+          overallScore: state.overallScore,
+          updatedAt: new Date().toISOString(),
+          github: state.github,
+          leetcode: state.leetcode,
+          resume: state.resume,
+          skillValidation: state.skillValidation,
+          roleReadiness: state.roleReadiness,
+          companyReadiness: state.companyReadiness,
+          roadmap: state.roadmap,
+          activities: state.activities
+        });
+      } catch (err) {
+        console.error('Failed to sync placement profile to Firestore:', err);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      syncToCloud();
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [state.github, state.leetcode, state.resume, state.skillValidation, state.roleReadiness, state.companyReadiness, state.roadmap, state.activities, state.overallScore, state.user]);
 
   // Recalculate the overall score whenever profiles change
   useEffect(() => {
@@ -114,7 +217,59 @@ export default function App() {
     }));
   };
 
-  const handleLogout = () => {
+  const handleConnectGoogle = async () => {
+    try {
+      const authResult = await googleSignIn();
+      if (authResult) {
+        const { user: firebaseUser, accessToken: token } = authResult;
+        setAccessToken(token);
+        
+        const parsedUser: UserType = {
+          id: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          fullName: firebaseUser.displayName || firebaseUser.email?.split('@')[0].toUpperCase() || 'STUDENT',
+          avatarUrl: firebaseUser.photoURL || `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150`,
+          joinedAt: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+        };
+
+        try {
+          const docRef = doc(db, 'users', firebaseUser.uid);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setState({
+              user: parsedUser,
+              github: data.github || null,
+              leetcode: data.leetcode || null,
+              resume: data.resume || null,
+              skillValidation: data.skillValidation || [],
+              roleReadiness: data.roleReadiness || [],
+              companyReadiness: data.companyReadiness || [],
+              roadmap: data.roadmap || null,
+              activities: data.activities || [],
+              overallScore: data.overallScore || 0
+            });
+          } else {
+            setState(prev => ({
+              ...prev,
+              user: parsedUser
+            }));
+          }
+        } catch (err) {
+          setState(prev => ({ ...prev, user: parsedUser }));
+        }
+      }
+    } catch (err: any) {
+      alert(`Google Connection Failed: ${err.message}`);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (err) {
+      console.error('Firebase sign out error:', err);
+    }
     localStorage.removeItem('devscope_workspace_state');
     setState({
       user: null,
@@ -128,9 +283,11 @@ export default function App() {
       activities: defaultActivities,
       overallScore: 0
     });
+    setAccessToken(null);
     setActiveTab('overview');
     setShowReport(false);
   };
+
 
   // Log an activity safely
   const logActivity = (action: string, module: 'AUTH' | 'GITHUB' | 'LEETCODE' | 'RESUME' | 'ROADMAP' | 'SYSTEM') => {
@@ -352,6 +509,46 @@ export default function App() {
     }));
   };
 
+  // Schedule a roadmap task onto user's Google Calendar
+  const handleScheduleTaskOnCalendar = async (taskName: string) => {
+    if (!accessToken) {
+      alert('Please connect your Google Workspace account in the Google Workspace tab to schedule this study block on your actual calendar.');
+      setActiveTab('workspace');
+      return;
+    }
+
+    try {
+      const startObj = new Date();
+      startObj.setDate(startObj.getDate() + 1); // tomorrow
+      startObj.setHours(10, 0, 0, 0); // 10:00 AM
+      const endObj = new Date(startObj.getTime() + 60 * 60 * 1000); // 1-hour block
+
+      await scheduleCalendarEvent(
+        accessToken,
+        `DevScope Prep: ${taskName}`,
+        `Automatically scheduled study milestone from your DevScope weekly roadmap.`,
+        startObj.toISOString(),
+        endObj.toISOString()
+      );
+
+      const log: ActivityLog = {
+        id: `act-log-${Date.now()}`,
+        action: `Scheduled calendar study sprint: ${taskName}`,
+        module: 'ROADMAP',
+        timestamp: new Date().toISOString()
+      };
+
+      setState(prev => ({
+        ...prev,
+        activities: [log, ...prev.activities]
+      }));
+
+      alert(`"${taskName}" has been successfully scheduled as a 1-hour focus block on your Google Calendar!`);
+    } catch (err: any) {
+      alert(`Could not schedule task block: ${err.message}`);
+    }
+  };
+
   // Fallback triggers to populate pre-analyzed state on initial load
   const handlePrepopulateDemo = async () => {
     try {
@@ -402,7 +599,7 @@ export default function App() {
 
   // Render Auth screen first if no candidate session is active
   if (!state.user) {
-    return <AuthScreen onLogin={handleLogin} />;
+    return <AuthScreen onLogin={handleLogin} onGoogleSignIn={handleConnectGoogle} />;
   }
 
   // Render printable full PDF document if report modal is triggered
@@ -491,6 +688,8 @@ export default function App() {
             { id: 'validation', label: 'Code Validation', icon: <ShieldCheck className="w-4 h-4" /> },
             { id: 'readiness', label: 'Hiring Eligibility', icon: <Award className="w-4 h-4" /> },
             { id: 'roadmap', label: 'Learning Roadmap', icon: <Calendar className="w-4 h-4" /> },
+            { id: 'jobs', label: 'Job Opportunities', icon: <Briefcase className="w-4 h-4" /> },
+            { id: 'workspace', label: 'Google Workspace', icon: <Mail className="w-4 h-4" /> },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -590,6 +789,25 @@ export default function App() {
             onGenerate={handleGenerateRoadmap} 
             onToggleTask={handleToggleTask} 
             hasProfile={!!(state.github && state.resume)} 
+            onScheduleTaskOnCalendar={handleScheduleTaskOnCalendar}
+          />
+        )}
+
+        {activeTab === 'jobs' && (
+          <JobOpportunitiesPanel 
+            targetCompanies={state.companyReadiness?.map(c => c.company) || []}
+            preferredRole={state.roleReadiness?.[0]?.role || 'Software Engineer'}
+            accessToken={accessToken}
+            onScheduleTaskOnCalendar={handleScheduleTaskOnCalendar}
+          />
+        )}
+
+        {activeTab === 'workspace' && (
+          <WorkspacePanel
+            accessToken={accessToken}
+            onConnectGoogle={handleConnectGoogle}
+            skills={state.resume?.detectedSkills || []}
+            overallScore={state.overallScore}
           />
         )}
 

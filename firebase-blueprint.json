@@ -1,0 +1,62 @@
+{
+  "entities": {
+    "userProfile": {
+      "title": "User Profile",
+      "description": "Stores user placement state, connected usernames, and placement tracking metrics.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "fullName": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 100 },
+        "gitUsername": { "type": "string", "maxLength": 100 },
+        "leetcodeUsername": { "type": "string", "maxLength": 100 },
+        "overallScore": { "type": "integer" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "fullName", "email"]
+    },
+    "calendarEvent": {
+      "title": "Calendar Event Reference",
+      "description": "Saves references to synchronized mock interviews or preparation sessions.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "googleEventId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "title", "startTime", "endTime"]
+    },
+    "activityLog": {
+      "title": "Activity Log",
+      "description": "Student platform events persisted to cloud database.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "action": { "type": "string", "maxLength": 500 },
+        "module": { "type": "string", "enum": ["AUTH", "GITHUB", "LEETCODE", "RESUME", "ROADMAP", "SYSTEM"] },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "userId", "action", "module", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "userProfile",
+      "description": "User specific credentials and portfolio configurations."
+    },
+    "/users/{userId}/events/{eventId}": {
+      "schema": "calendarEvent",
+      "description": "Schedules and synced Google Calendar events for placement preparation."
+    },
+    "/users/{userId}/activities/{activityId}": {
+      "schema": "activityLog",
+      "description": "Persistent student log feed."
+    }
+  }
+}

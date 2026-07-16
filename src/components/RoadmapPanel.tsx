@@ -22,9 +22,10 @@ interface RoadmapPanelProps {
   onGenerate: (role: CareerRole) => Promise<void>;
   onToggleTask: (weekNum: number, taskId: string) => void;
   hasProfile: boolean;
+  onScheduleTaskOnCalendar?: (taskName: string) => void;
 }
 
-export default function RoadmapPanel({ roadmap, onGenerate, onToggleTask, hasProfile }: RoadmapPanelProps) {
+export default function RoadmapPanel({ roadmap, onGenerate, onToggleTask, hasProfile, onScheduleTaskOnCalendar }: RoadmapPanelProps) {
   const [selectedRole, setSelectedRole] = useState<CareerRole>('Backend');
   const [activeWeek, setActiveWeek] = useState<number>(1);
   const [isLoading, setIsLoading] = useState(false);
@@ -168,19 +169,36 @@ export default function RoadmapPanel({ roadmap, onGenerate, onToggleTask, hasPro
                     <div 
                       key={task.id}
                       onClick={() => onToggleTask(activeWeek, task.id)}
-                      className="flex items-start gap-3 p-3 border border-gray-100 rounded-lg hover:border-gray-200 hover:bg-gray-50/50 transition cursor-pointer select-none"
+                      className="flex justify-between items-center p-3 border border-gray-100 rounded-lg hover:border-gray-200 hover:bg-gray-50/50 transition cursor-pointer select-none group"
                     >
-                      <input
-                        type="checkbox"
-                        checked={task.completed}
-                        onChange={() => {}} // Controlled by outer div click to prevent input conflict
-                        className="w-4 h-4 mt-0.5 accent-indigo-600 cursor-pointer"
-                      />
-                      <span className={`text-xs ${
-                        task.completed ? 'line-through text-gray-400' : 'text-gray-700 font-medium'
-                      }`}>
-                        {task.task}
-                      </span>
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={task.completed}
+                          onChange={() => {}} // Controlled by outer div click to prevent input conflict
+                          className="w-4 h-4 mt-0.5 accent-indigo-600 cursor-pointer text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className={`text-xs ${
+                          task.completed ? 'line-through text-gray-400 font-normal' : 'text-gray-700 font-medium'
+                        }`}>
+                          {task.task}
+                        </span>
+                      </div>
+
+                      {onScheduleTaskOnCalendar && !task.completed && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onScheduleTaskOnCalendar(task.task);
+                          }}
+                          className="hidden group-hover:flex items-center gap-1 text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-semibold px-2 py-1 rounded transition"
+                          title="Schedule this preparation block on Google Calendar"
+                        >
+                          <Calendar className="w-3 h-3 text-indigo-500" />
+                          <span>Schedule</span>
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
