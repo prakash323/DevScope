@@ -1,0 +1,6 @@
+{
+  "name": "DevScope",
+  "description": "AI Career Intelligence Platform that analyzes student GitHub, LeetCode, and resumes to provide placement-readiness scores, gap validation, and learning roadmaps.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
