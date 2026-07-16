@@ -30,7 +30,8 @@ import {
   AlertTriangle, 
   Clock, 
   ChevronRight,
-  ShieldAlert
+  ShieldAlert,
+  Download
 } from 'lucide-react';
 import { DevScopeState, CareerRole, TargetCompany } from '../types';
 
@@ -42,6 +43,39 @@ interface DashboardOverviewProps {
 
 export default function DashboardOverview({ state, onNavigate, onRefreshAll }: DashboardOverviewProps) {
   const { github, leetcode, resume, overallScore, activities, roleReadiness, companyReadiness } = state;
+
+  const handleDownloadCSV = () => {
+    if (!activities || activities.length === 0) return;
+
+    // Headers
+    const headers = ['Activity ID', 'Module / Component', 'Action Performed', 'Timestamp (UTC)', 'Details'];
+    
+    // Rows
+    const rows = activities.map(log => [
+      log.id,
+      log.module || 'N/A',
+      // Escape quotes and wrap in quotes to handle commas inside text
+      `"${log.action.replace(/"/g, '""')}"`,
+      log.timestamp,
+      log.details ? `"${log.details.replace(/"/g, '""')}"` : ''
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(r => r.join(','))
+    ].join('\n');
+
+    // Create browser blob and download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `devscope_activity_log_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Prepare radar chart data representing overall category competence
   const radarData = [
@@ -323,9 +357,22 @@ export default function DashboardOverview({ state, onNavigate, onRefreshAll }: D
 
         {/* Panel 2: Activity Log Timeline */}
         <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm flex flex-col">
-          <h3 className="font-sans text-base font-semibold text-gray-900 mb-3">
-            Evaluation Timeline
-          </h3>
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="font-sans text-base font-semibold text-gray-900">
+              Evaluation Timeline
+            </h3>
+            {activities && activities.length > 0 && (
+              <button
+                id="download-activities-csv"
+                onClick={handleDownloadCSV}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition cursor-pointer bg-indigo-50/50 hover:bg-indigo-50 px-2.5 py-1.5 rounded-lg border border-indigo-100/80"
+                title="Download all activities as a CSV file"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export CSV</span>
+              </button>
+            )}
+          </div>
           <div className="flex-1 space-y-4 overflow-y-auto max-h-[220px] pr-1">
             {activities.length === 0 ? (
               <div className="text-center text-xs text-gray-400 py-10 font-sans">

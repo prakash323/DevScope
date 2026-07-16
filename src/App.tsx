@@ -509,6 +509,30 @@ export default function App() {
     }));
   };
 
+  const handleUpdateTaskPriority = (weekNum: number, taskId: string, priority: 'High' | 'Medium' | 'Low') => {
+    if (!state.roadmap) return;
+
+    const updatedRoadmap = state.roadmap.map(week => {
+      if (week.week === weekNum) {
+        return {
+          ...week,
+          tasks: week.tasks.map(task => {
+            if (task.id === taskId) {
+              return { ...task, priority };
+            }
+            return task;
+          })
+        };
+      }
+      return week;
+    });
+
+    setState(prev => ({
+      ...prev,
+      roadmap: updatedRoadmap
+    }));
+  };
+
   // Schedule a roadmap task onto user's Google Calendar
   const handleScheduleTaskOnCalendar = async (taskName: string) => {
     if (!accessToken) {
@@ -788,6 +812,7 @@ export default function App() {
             roadmap={state.roadmap} 
             onGenerate={handleGenerateRoadmap} 
             onToggleTask={handleToggleTask} 
+            onUpdateTaskPriority={handleUpdateTaskPriority}
             hasProfile={!!(state.github && state.resume)} 
             onScheduleTaskOnCalendar={handleScheduleTaskOnCalendar}
           />

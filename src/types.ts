@@ -141,6 +141,8 @@ export interface RoadmapItem {
     id: string;
     task: string;
     completed: boolean;
+    priority?: 'High' | 'Medium' | 'Low';
+    googleTaskId?: string;
   }[];
   estimatedHours: number;
   resources: string[];

@@ -21,14 +21,23 @@ interface RoadmapPanelProps {
   roadmap: RoadmapItem[] | null;
   onGenerate: (role: CareerRole) => Promise<void>;
   onToggleTask: (weekNum: number, taskId: string) => void;
+  onUpdateTaskPriority?: (weekNum: number, taskId: string, priority: 'High' | 'Medium' | 'Low') => void;
   hasProfile: boolean;
   onScheduleTaskOnCalendar?: (taskName: string) => void;
 }
 
-export default function RoadmapPanel({ roadmap, onGenerate, onToggleTask, hasProfile, onScheduleTaskOnCalendar }: RoadmapPanelProps) {
+export default function RoadmapPanel({ 
+  roadmap, 
+  onGenerate, 
+  onToggleTask, 
+  onUpdateTaskPriority,
+  hasProfile, 
+  onScheduleTaskOnCalendar 
+}: RoadmapPanelProps) {
   const [selectedRole, setSelectedRole] = useState<CareerRole>('Backend');
   const [activeWeek, setActiveWeek] = useState<number>(1);
   const [isLoading, setIsLoading] = useState(false);
+  const [sortBy, setSortBy] = useState<'default' | 'priority'>('default');
 
   const handleGenerateRoadmap = async () => {
     setIsLoading(true);
@@ -46,6 +55,26 @@ export default function RoadmapPanel({ roadmap, onGenerate, onToggleTask, hasPro
   const totalTasks = roadmap?.reduce((sum, w) => sum + w.tasks.length, 0) || 0;
   const completedTasks = roadmap?.reduce((sum, w) => sum + w.tasks.filter(t => t.completed).length, 0) || 0;
   const completionPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+  const priorityWeight: Record<'High' | 'Medium' | 'Low', number> = {
+    'High': 3,
+    'Medium': 2,
+    'Low': 1
+  };
+
+  const getPriorityWeight = (priority?: 'High' | 'Medium' | 'Low') => {
+    if (!priority) return 2; // Default to Medium
+    return priorityWeight[priority];
+  };
+
+  const displayedTasks = (() => {
+    if (!currentWeekDetails) return [];
+    const tasksCopy = [...currentWeekDetails.tasks];
+    if (sortBy === 'priority') {
+      return tasksCopy.sort((a, b) => getPriorityWeight(b.priority) - getPriorityWeight(a.priority));
+    }
+    return tasksCopy;
+  })();
 
   return (
     <div className="space-y-6" id="roadmap-panel">
@@ -160,23 +189,38 @@ export default function RoadmapPanel({ roadmap, onGenerate, onToggleTask, hasPro
 
               {/* Interactive task checklist */}
               <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
-                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
-                  Curricular Checklist & Study Gaps Tasks
-                </h4>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                  <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                    Curricular Checklist & Study Gaps Tasks
+                  </h4>
+                  
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="task-priority-sort" className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Sort:</label>
+                    <select
+                      id="task-priority-sort"
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value as 'default' | 'priority')}
+                      className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-gray-50 text-gray-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans cursor-pointer font-medium"
+                    >
+                      <option value="default">Weekly Order</option>
+                      <option value="priority">Priority (High → Low)</option>
+                    </select>
+                  </div>
+                </div>
 
                 <div className="space-y-3">
-                  {currentWeekDetails.tasks.map((task) => (
+                  {displayedTasks.map((task) => (
                     <div 
                       key={task.id}
                       onClick={() => onToggleTask(activeWeek, task.id)}
                       className="flex justify-between items-center p-3 border border-gray-100 rounded-lg hover:border-gray-200 hover:bg-gray-50/50 transition cursor-pointer select-none group"
                     >
-                      <div className="flex items-start gap-3">
+                      <div className="flex items-start gap-3 flex-1 mr-3">
                         <input
                           type="checkbox"
                           checked={task.completed}
                           onChange={() => {}} // Controlled by outer div click to prevent input conflict
-                          className="w-4 h-4 mt-0.5 accent-indigo-600 cursor-pointer text-indigo-600 focus:ring-indigo-500"
+                          className="w-4 h-4 mt-0.5 accent-indigo-600 cursor-pointer text-indigo-600 focus:ring-indigo-500 flex-shrink-0"
                         />
                         <span className={`text-xs ${
                           task.completed ? 'line-through text-gray-400 font-normal' : 'text-gray-700 font-medium'
@@ -185,20 +229,46 @@ export default function RoadmapPanel({ roadmap, onGenerate, onToggleTask, hasPro
                         </span>
                       </div>
 
-                      {onScheduleTaskOnCalendar && !task.completed && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <select
+                          id={`priority-select-${task.id}`}
+                          value={task.priority || 'Medium'}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
                             e.stopPropagation();
-                            onScheduleTaskOnCalendar(task.task);
+                            if (onUpdateTaskPriority) {
+                              onUpdateTaskPriority(activeWeek, task.id, e.target.value as 'High' | 'Medium' | 'Low');
+                            }
                           }}
-                          className="hidden group-hover:flex items-center gap-1 text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-semibold px-2 py-1 rounded transition"
-                          title="Schedule this preparation block on Google Calendar"
+                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer transition ${
+                            task.priority === 'High' 
+                              ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' 
+                              : task.priority === 'Low'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                              : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                          }`}
                         >
-                          <Calendar className="w-3 h-3 text-indigo-500" />
-                          <span>Schedule</span>
-                        </button>
-                      )}
+                          <option value="High" className="text-gray-700">High</option>
+                          <option value="Medium" className="text-gray-700">Medium</option>
+                          <option value="Low" className="text-gray-700">Low</option>
+                        </select>
+
+                        {onScheduleTaskOnCalendar && !task.completed && (
+                          <button
+                            id={`schedule-btn-${task.id}`}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onScheduleTaskOnCalendar(task.task);
+                            }}
+                            className="hidden group-hover:flex items-center gap-1 text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-semibold px-2 py-1 rounded transition"
+                            title="Schedule this preparation block on Google Calendar"
+                          >
+                            <Calendar className="w-3 h-3 text-indigo-500" />
+                            <span>Schedule</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

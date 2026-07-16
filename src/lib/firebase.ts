@@ -42,6 +42,7 @@ provider.addScope('https://www.googleapis.com/auth/calendar.events');
 provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
 provider.addScope('https://www.googleapis.com/auth/gmail.send');
 provider.addScope('https://www.googleapis.com/auth/gmail.modify');
+provider.addScope('https://www.googleapis.com/auth/tasks');
 
 // State flags
 let isSigningIn = false;
