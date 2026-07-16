@@ -6,6 +6,139 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
+@variant dark (&:where(.dark, .dark *));
+
+/* Premium Dark Theme Overrides */
+.dark {
+  background-color: #020617 !important;
+  color: #f8fafc !important;
+
+  /* Global page element structures */
+  #app-workspace, #auth-container {
+    background-color: #030712 !important; /* Extremely clean charcoal deep-black background */
+  }
+
+  /* Force headers, navs, footers and panels to dark mode slate colors */
+  header, nav, footer {
+    background-color: #0b0f19 !important;
+    border-color: #1e293b !important;
+  }
+
+  /* Override standard cards and panels */
+  .bg-white, [class*="bg-white"] {
+    background-color: #0f172a !important; /* Slate 900 background */
+  }
+
+  .bg-gray-50, .bg-\[\#F9FAFB\], .bg-slate-50 {
+    background-color: #090d16 !important; /* Deep cosmic grey backgrounds */
+  }
+
+  .bg-slate-100, .bg-gray-100 {
+    background-color: #1e293b !important;
+  }
+
+  /* Border styles */
+  .border-gray-200, .border-slate-200, .border-\[\#E5E7EB\], .border-gray-100 {
+    border-color: #1e293b !important; /* Slate 800 boundaries */
+  }
+
+  .border-gray-300 {
+    border-color: #334155 !important; /* Slate 700 inputs boundary */
+  }
+
+  /* Custom Hover variations */
+  .hover\:bg-gray-50:hover, .hover\:bg-slate-50:hover, .hover\:bg-slate-100:hover {
+    background-color: #1e293b !important;
+  }
+
+  /* Text colors */
+  .text-gray-900, .text-slate-900, .text-slate-800, .text-gray-800 {
+    color: #f8fafc !important; /* Ultra high contrast slate text */
+  }
+
+  .text-gray-700, .text-slate-700 {
+    color: #cbd5e1 !important; /* Slate 300 body text */
+  }
+
+  .text-gray-600, .text-slate-600 {
+    color: #94a3b8 !important; /* Slate 400 helper text */
+  }
+
+  .text-gray-500, .text-slate-500 {
+    color: #64748b !important; /* Slate 500 label text */
+  }
+
+  .text-gray-400, .text-slate-400 {
+    color: #475569 !important; /* Slate 600 secondary details */
+  }
+
+  /* Standard form inputs */
+  input, textarea, select {
+    background-color: #0f172a !important;
+    color: #f8fafc !important;
+    border-color: #334155 !important;
+  }
+
+  input::placeholder, textarea::placeholder {
+    color: #475569 !important;
+  }
+
+  /* Tabs selection overrides */
+  .border-transparent {
+    border-color: transparent !important;
+  }
+
+  /* Indicator tags & icons container modifications */
+  .bg-indigo-50, .bg-blue-50, .bg-emerald-50, .bg-amber-50, .bg-purple-50 {
+    background-color: #1e1b4b !important; /* Indigo 950 base */
+  }
+
+  .text-indigo-600, .text-blue-600, .text-purple-600 {
+    color: #818cf8 !important; /* Indigo 400 */
+  }
+
+  .text-emerald-600 {
+    color: #34d399 !important; /* Emerald 400 */
+  }
+
+  .text-amber-600, .text-amber-700, .text-amber-800 {
+    color: #fbbf24 !important; /* Amber 400 */
+  }
+
+  .bg-amber-50, .bg-amber-100 {
+    background-color: #451a03 !important; /* Amber 950 base */
+  }
+
+  .border-amber-200, .border-amber-300 {
+    border-color: #78350f !important;
+  }
+
+  /* Recharts Charts SVG overrides for perfect readability in dark mode */
+  svg .recharts-text, svg .recharts-label, svg text {
+    fill: #94a3b8 !important;
+  }
+
+  .recharts-cartesian-grid-horizontal line,
+  .recharts-cartesian-grid-vertical line {
+    stroke: #1e293b !important;
+  }
+
+  .recharts-polar-grid-angle line,
+  .recharts-polar-grid-concentric path {
+    stroke: #1e293b !important;
+  }
+
+  .recharts-default-tooltip {
+    background-color: #0f172a !important;
+    border-color: #334155 !important;
+  }
+
+  .recharts-tooltip-item-name,
+  .recharts-tooltip-item-value {
+    color: #f8fafc !important;
+  }
+}
+
 /* Custom print media styles for premium PDF exports */
 @media print {
   body {

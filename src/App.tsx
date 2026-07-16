@@ -19,7 +19,9 @@ import {
   Flame,
   LayoutDashboard,
   Mail,
-  Briefcase
+  Briefcase,
+  Sun,
+  Moon
 } from 'lucide-react';
 
 import { DevScopeState, User as UserType, RoadmapItem, SkillValidation, GitHubProfile, LeetCodeProfile, ResumeData, ActivityLog } from './types';
@@ -37,7 +39,7 @@ import JobOpportunitiesPanel from './components/JobOpportunitiesPanel';
 
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db, initAuth, googleSignIn, logout } from './lib/firebase';
-import { scheduleCalendarEvent } from './lib/workspace';
+import { scheduleCalendarEvent, getOrCreateTaskList, syncSingleTaskToGoogleTasks } from './lib/workspace';
 
 
 // Starting initial mock activities for a pristine placeholder state
@@ -73,6 +75,23 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [showReport, setShowReport] = useState(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
+
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    return (localStorage.getItem('devscope_theme') as 'light' | 'dark') || 'light';
+  });
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('devscope_theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  };
 
   // Initialize Authentication & Session Restore on Mount
   useEffect(() => {
@@ -484,17 +503,71 @@ export default function App() {
     }));
   };
 
+  // Helper to trigger background synchronization of a task to Google Tasks
+  const triggerGoogleTaskSync = async (weekNum: number, taskId: string, updatedTask: any) => {
+    if (!accessToken || !state.roadmap) return;
+    try {
+      const week = state.roadmap.find(w => w.week === weekNum);
+      if (!week) return;
+
+      // Use a consistent name for the task list
+      const taskListId = await getOrCreateTaskList(accessToken, "Placement");
+
+      const newGoogleTaskId = await syncSingleTaskToGoogleTasks(
+        accessToken,
+        taskListId,
+        weekNum,
+        week.focus,
+        {
+          id: updatedTask.id,
+          task: updatedTask.task,
+          completed: updatedTask.completed,
+          priority: updatedTask.priority,
+          googleTaskId: updatedTask.googleTaskId
+        }
+      );
+
+      // If a brand new task ID was generated, save it in state
+      if (newGoogleTaskId && newGoogleTaskId !== updatedTask.googleTaskId) {
+        setState(prev => {
+          if (!prev.roadmap) return prev;
+          return {
+            ...prev,
+            roadmap: prev.roadmap.map(w => {
+              if (w.week === weekNum) {
+                return {
+                  ...w,
+                  tasks: w.tasks.map(t => {
+                    if (t.id === taskId) {
+                      return { ...t, googleTaskId: newGoogleTaskId };
+                    }
+                    return t;
+                  })
+                };
+              }
+              return w;
+            })
+          };
+        });
+      }
+    } catch (err) {
+      console.error('Failed to sync to Google Tasks:', err);
+    }
+  };
+
   // Roadmap task checklist toggle
   const handleToggleTask = (weekNum: number, taskId: string) => {
     if (!state.roadmap) return;
 
+    let updatedTask: any = null;
     const updatedRoadmap = state.roadmap.map(week => {
       if (week.week === weekNum) {
         return {
           ...week,
           tasks: week.tasks.map(task => {
             if (task.id === taskId) {
-              return { ...task, completed: !task.completed };
+              updatedTask = { ...task, completed: !task.completed };
+              return updatedTask;
             }
             return task;
           })
@@ -507,18 +580,24 @@ export default function App() {
       ...prev,
       roadmap: updatedRoadmap
     }));
+
+    if (updatedTask) {
+      triggerGoogleTaskSync(weekNum, taskId, updatedTask);
+    }
   };
 
   const handleUpdateTaskPriority = (weekNum: number, taskId: string, priority: 'High' | 'Medium' | 'Low') => {
     if (!state.roadmap) return;
 
+    let updatedTask: any = null;
     const updatedRoadmap = state.roadmap.map(week => {
       if (week.week === weekNum) {
         return {
           ...week,
           tasks: week.tasks.map(task => {
             if (task.id === taskId) {
-              return { ...task, priority };
+              updatedTask = { ...task, priority };
+              return updatedTask;
             }
             return task;
           })
@@ -531,6 +610,10 @@ export default function App() {
       ...prev,
       roadmap: updatedRoadmap
     }));
+
+    if (updatedTask) {
+      triggerGoogleTaskSync(weekNum, taskId, updatedTask);
+    }
   };
 
   // Schedule a roadmap task onto user's Google Calendar
@@ -570,6 +653,61 @@ export default function App() {
       alert(`"${taskName}" has been successfully scheduled as a 1-hour focus block on your Google Calendar!`);
     } catch (err: any) {
       alert(`Could not schedule task block: ${err.message}`);
+    }
+  };
+
+  // Sync entire study plan to Google Tasks
+  const handleSyncAllToGoogleTasks = async () => {
+    if (!accessToken) {
+      alert('Please connect your Google Workspace account in the Google Workspace tab to sync your study plan.');
+      setActiveTab('workspace');
+      return;
+    }
+    if (!state.roadmap) {
+      alert('Please generate a roadmap first before syncing.');
+      return;
+    }
+
+    try {
+      // Find the first role score or use a generic title
+      const preferredRole = state.roleReadiness?.[0]?.role || 'Placement';
+      const taskListId = await getOrCreateTaskList(accessToken, preferredRole);
+
+      // Perform a parallelized/sequential batch sync for all tasks across all 8 weeks
+      const updatedRoadmap = await Promise.all(state.roadmap.map(async (week) => {
+        const updatedTasks = await Promise.all(week.tasks.map(async (task) => {
+          try {
+            const googleTaskId = await syncSingleTaskToGoogleTasks(
+              accessToken,
+              taskListId,
+              week.week,
+              week.focus,
+              task
+            );
+            return { ...task, googleTaskId };
+          } catch (taskErr) {
+            console.error(`Failed to sync task ${task.id}:`, taskErr);
+            return task;
+          }
+        }));
+        return { ...week, tasks: updatedTasks };
+      }));
+
+      setState(prev => ({
+        ...prev,
+        roadmap: updatedRoadmap,
+        activities: [{
+          id: `act-tasks-sync-${Date.now()}`,
+          action: `Synchronized ${preferredRole} study plan tasks to Google Tasks.`,
+          module: 'ROADMAP',
+          timestamp: new Date().toISOString()
+        }, ...prev.activities]
+      }));
+
+      alert('All study plan tasks have been successfully synchronized to Google Tasks! Look for the "DevScope: ' + preferredRole + ' Study Plan" list in your task manager.');
+    } catch (err: any) {
+      console.error('Failed to sync study plan to Google Tasks:', err);
+      alert('Failed to sync with Google Tasks: ' + err.message);
     }
   };
 
@@ -623,7 +761,7 @@ export default function App() {
 
   // Render Auth screen first if no candidate session is active
   if (!state.user) {
-    return <AuthScreen onLogin={handleLogin} onGoogleSignIn={handleConnectGoogle} />;
+    return <AuthScreen onLogin={handleLogin} onGoogleSignIn={handleConnectGoogle} theme={theme} onToggleTheme={toggleTheme} />;
   }
 
   // Render printable full PDF document if report modal is triggered
@@ -636,20 +774,20 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F9FAFB] flex flex-col justify-between" id="app-workspace">
+    <div className="min-h-screen bg-[#F9FAFB] dark:bg-slate-950 text-gray-900 dark:text-slate-100 flex flex-col justify-between" id="app-workspace">
       
       {/* Top Header Row */}
-      <header className="px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 border-b border-[#E5E7EB] bg-white print:hidden">
+      <header className="px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 border-b border-[#E5E7EB] dark:border-slate-800 bg-white dark:bg-slate-900 print:hidden transition-colors duration-200">
         
         {/* Branding */}
         <div className="flex items-center gap-2">
           <div className="bg-indigo-600 p-1.5 rounded text-white flex items-center justify-center">
             <Code className="w-5 h-5" />
           </div>
-          <span className="font-sans font-semibold tracking-tight text-xl text-gray-900">
+          <span className="font-sans font-semibold tracking-tight text-xl text-gray-900 dark:text-white">
             DevScope
           </span>
-          <span className="text-[10px] bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full font-mono">
+          <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-full font-mono">
             V1.0-LIVE
           </span>
         </div>
@@ -676,22 +814,32 @@ export default function App() {
               }
               setShowReport(true);
             }}
-            className="px-3.5 py-1.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg text-xs font-semibold font-sans transition flex items-center gap-1 cursor-pointer"
+            className="px-3.5 py-1.5 bg-gray-900 hover:bg-gray-800 dark:bg-indigo-600 dark:hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold font-sans transition flex items-center gap-1 cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Generate Report PDF</span>
           </button>
 
+          {/* Global Theme Toggle Button */}
+          <button
+            onClick={toggleTheme}
+            className="p-1.5 text-gray-400 hover:text-gray-600 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition cursor-pointer"
+            title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+            aria-label="Theme toggle"
+          >
+            {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4 text-amber-400" />}
+          </button>
+
           {/* User logout */}
-          <div className="flex items-center gap-2 border-l border-gray-200 pl-3">
+          <div className="flex items-center gap-2 border-l border-gray-200 dark:border-slate-800 pl-3">
             <div className="text-right hidden md:block">
-              <div className="text-xs font-semibold text-gray-800 font-sans leading-none">{state.user.fullName}</div>
-              <span className="text-[10px] text-gray-400 font-sans mt-0.5 inline-block">{state.user.email}</span>
+              <div className="text-xs font-semibold text-gray-800 dark:text-slate-200 font-sans leading-none">{state.user.fullName}</div>
+              <span className="text-[10px] text-gray-400 dark:text-slate-400 font-sans mt-0.5 inline-block">{state.user.email}</span>
             </div>
             <button
               onClick={handleLogout}
               title="Sign Out Session"
-              className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition cursor-pointer"
+              className="p-1.5 text-gray-400 hover:text-gray-600 dark:text-slate-400 dark:hover:text-slate-200 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -702,7 +850,7 @@ export default function App() {
       </header>
 
       {/* Primary Tab Navigation Row */}
-      <nav className="border-b border-[#E5E7EB] bg-white px-6 print:hidden">
+      <nav className="border-b border-[#E5E7EB] dark:border-slate-800 bg-white dark:bg-slate-900 px-6 print:hidden transition-colors duration-200">
         <div className="flex gap-4 overflow-x-auto no-scrollbar py-1">
           {[
             { id: 'overview', label: 'Dashboard', icon: <LayoutDashboard className="w-4 h-4" /> },
@@ -720,8 +868,8 @@ export default function App() {
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-1.5 py-3.5 px-1 text-xs font-medium border-b-2 font-sans transition flex-shrink-0 cursor-pointer ${
                 activeTab === tab.id 
-                  ? 'border-indigo-600 text-indigo-600' 
-                  : 'border-transparent text-gray-400 hover:text-gray-600'
+                  ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400' 
+                  : 'border-transparent text-gray-400 hover:text-gray-600 dark:text-slate-400 dark:hover:text-slate-200'
               }`}
             >
               {tab.icon}
@@ -815,6 +963,8 @@ export default function App() {
             onUpdateTaskPriority={handleUpdateTaskPriority}
             hasProfile={!!(state.github && state.resume)} 
             onScheduleTaskOnCalendar={handleScheduleTaskOnCalendar}
+            onSyncAllToGoogleTasks={handleSyncAllToGoogleTasks}
+            isGoogleConnected={!!accessToken}
           />
         )}
 
@@ -839,7 +989,7 @@ export default function App() {
       </main>
 
       {/* Bottom Footer Row */}
-      <footer className="py-6 border-t border-gray-200 text-center text-xs text-gray-400 bg-white print:hidden space-y-1">
+      <footer className="py-6 border-t border-gray-200 dark:border-slate-800 text-center text-xs text-gray-400 dark:text-slate-500 bg-white dark:bg-slate-900 print:hidden space-y-1 transition-colors duration-200">
         <div>DevScope © 2026. Designed for Placement Preparation Cells.</div>
         <div>All profile validations are mapped to corporate hiring rubrics.</div>
       </footer>

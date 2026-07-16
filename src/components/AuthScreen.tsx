@@ -4,15 +4,17 @@
  */
 
 import React, { useState } from 'react';
-import { Shield, Sparkles, Code, FileText, ArrowRight } from 'lucide-react';
+import { Shield, Sparkles, Code, FileText, ArrowRight, Sun, Moon } from 'lucide-react';
 import { User } from '../types';
 
 interface AuthScreenProps {
   onLogin: (user: User) => void;
   onGoogleSignIn?: () => Promise<void>;
+  theme?: 'light' | 'dark';
+  onToggleTheme?: () => void;
 }
 
-export default function AuthScreen({ onLogin, onGoogleSignIn }: AuthScreenProps) {
+export default function AuthScreen({ onLogin, onGoogleSignIn, theme, onToggleTheme }: AuthScreenProps) {
   const [isRegistering, setIsRegistering] = useState(false);
   const [email, setEmail] = useState('');
   const [fullName, setFullName] = useState('');
@@ -48,8 +50,23 @@ export default function AuthScreen({ onLogin, onGoogleSignIn }: AuthScreenProps)
             AI Placement Intelligence
           </span>
         </div>
-        <div className="text-sm text-gray-500 font-sans">
-          Placement Cell Cohort 2026
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-gray-500 font-sans hidden sm:block">
+            Placement Cell Cohort 2026
+          </div>
+          {onToggleTheme && (
+            <button
+              onClick={onToggleTheme}
+              aria-label="Toggle Theme"
+              className="p-1.5 text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer flex items-center justify-center border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm"
+            >
+              {theme === 'dark' ? (
+                <Sun className="w-4 h-4 text-amber-500" />
+              ) : (
+                <Moon className="w-4 h-4" />
+              )}
+            </button>
+          )}
         </div>
       </header>
 

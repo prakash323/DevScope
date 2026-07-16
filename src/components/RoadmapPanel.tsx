@@ -13,7 +13,8 @@ import {
   Sparkles, 
   AlertTriangle,
   ChevronRight,
-  Info
+  Info,
+  CheckSquare
 } from 'lucide-react';
 import { RoadmapItem, CareerRole } from '../types';
 
@@ -24,6 +25,8 @@ interface RoadmapPanelProps {
   onUpdateTaskPriority?: (weekNum: number, taskId: string, priority: 'High' | 'Medium' | 'Low') => void;
   hasProfile: boolean;
   onScheduleTaskOnCalendar?: (taskName: string) => void;
+  onSyncAllToGoogleTasks?: () => Promise<void>;
+  isGoogleConnected?: boolean;
 }
 
 export default function RoadmapPanel({ 
@@ -32,7 +35,9 @@ export default function RoadmapPanel({
   onToggleTask, 
   onUpdateTaskPriority,
   hasProfile, 
-  onScheduleTaskOnCalendar 
+  onScheduleTaskOnCalendar,
+  onSyncAllToGoogleTasks,
+  isGoogleConnected
 }: RoadmapPanelProps) {
   const [selectedRole, setSelectedRole] = useState<CareerRole>('Backend');
   const [activeWeek, setActiveWeek] = useState<number>(1);
@@ -159,6 +164,38 @@ export default function RoadmapPanel({
                 );
               })}
             </div>
+
+            {/* Google Tasks Sync Controller */}
+            {onSyncAllToGoogleTasks && (
+              <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm font-sans space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
+                    <CheckSquare className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-gray-900">Google Tasks Sync</h4>
+                    <p className="text-[10px] text-gray-400">Study plan task manager</p>
+                  </div>
+                </div>
+
+                {isGoogleConnected ? (
+                  <button
+                    onClick={onSyncAllToGoogleTasks}
+                    className="w-full py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <span>Sync Entire Plan</span>
+                  </button>
+                ) : (
+                  <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-200 text-[10px] text-amber-700 font-medium">
+                    Connect Google Workspace to enable task list syncing.
+                  </div>
+                )}
+                
+                <p className="text-[9px] text-gray-400 leading-normal text-center">
+                  Individual tasks auto-sync on checking or priority updates.
+                </p>
+              </div>
+            )}
 
           </div>
 

@@ -220,3 +220,130 @@ export async function fetchRecruitmentEmails(accessToken: string): Promise<Googl
     throw err;
   }
 }
+
+/**
+ * Get or create a specific Google Task List for the student's study plan.
+ */
+export async function getOrCreateTaskList(accessToken: string, targetRole: string): Promise<string> {
+  try {
+    const listTitle = `DevScope: ${targetRole} Study Plan`;
+    const url = 'https://tasks.googleapis.com/v1/users/@me/lists';
+    
+    // 1. List existing task lists to find a match
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message || 'Failed to fetch Google Task Lists.');
+    }
+
+    const data = await res.json();
+    const existingLists = data.items || [];
+    const match = existingLists.find((list: any) => list.title === listTitle);
+    
+    if (match) {
+      return match.id;
+    }
+
+    // 2. Match not found, create new list
+    const createRes = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ title: listTitle })
+    });
+
+    if (!createRes.ok) {
+      const err = await createRes.json();
+      throw new Error(err.error?.message || 'Failed to create Google Task List.');
+    }
+
+    const newList = await createRes.json();
+    return newList.id;
+  } catch (err) {
+    console.error('getOrCreateTaskList error:', err);
+    throw err;
+  }
+}
+
+interface SyncTaskParam {
+  id: string;
+  task: string;
+  completed: boolean;
+  priority?: 'High' | 'Medium' | 'Low';
+  googleTaskId?: string;
+}
+
+/**
+ * Synchronize a single task with Google Tasks.
+ */
+export async function syncSingleTaskToGoogleTasks(
+  accessToken: string,
+  taskListId: string,
+  weekNum: number,
+  weekFocus: string,
+  task: SyncTaskParam
+): Promise<string> {
+  const taskTitle = `[W${weekNum}] ${task.task}`;
+  const taskNotes = `Priority: ${task.priority || 'Medium'}\nWeek ${weekNum} Focus: ${weekFocus}\nSynced automatically via DevScope.`;
+  const taskStatus = task.completed ? 'completed' : 'needsAction';
+
+  // If task has completed status in Google Tasks, we must also clear/set completed date or status.
+  // Google Tasks API uses "completed" and "needsAction"
+  const body = {
+    title: taskTitle,
+    notes: taskNotes,
+    status: taskStatus
+  };
+
+  try {
+    if (task.googleTaskId) {
+      // Try updating existing task
+      const url = `https://tasks.googleapis.com/v1/lists/${taskListId}/tasks/${task.googleTaskId}`;
+      const res = await fetch(url, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (res.ok) {
+        const updated = await res.json();
+        return updated.id;
+      } else {
+        console.warn(`Failed to update task ${task.googleTaskId}, creating a new one instead. Status: ${res.status}`);
+      }
+    }
+
+    // Create new task
+    const url = `https://tasks.googleapis.com/v1/lists/${taskListId}/tasks`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message || 'Failed to create task in Google Tasks.');
+    }
+
+    const newTask = await res.json();
+    return newTask.id;
+  } catch (err) {
+    console.error('syncSingleTaskToGoogleTasks error:', err);
+    throw err;
+  }
+}
+
