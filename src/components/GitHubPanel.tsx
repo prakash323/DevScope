@@ -332,12 +332,63 @@ export default function GitHubPanel({ profile, aiFeedback, onAnalyze }: GitHubPa
 
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-xl p-12 text-center shadow-sm">
-          <Layers className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <h4 className="font-sans font-semibold text-gray-800 text-lg">No GitHub Profile Connected</h4>
-          <p className="text-sm text-gray-400 font-sans mt-1 max-w-sm mx-auto">
-            Integrate your GitHub candidate profile above to retrieve code metrics and review recruiter gaps.
+        <div className="bg-white/80 backdrop-blur-md border border-slate-200/80 rounded-2xl p-12 text-center shadow-sm relative overflow-hidden group">
+          
+          {/* Decorative faint blueprint grid reference coords */}
+          <div className="absolute top-4 left-4 text-[9px] font-mono text-slate-400 select-none">
+            REF: DEV_FOOTPRINT_SEC_0
+          </div>
+          <div className="absolute bottom-4 right-4 text-[9px] font-mono text-slate-400 select-none">
+            SYS_STATE: PENDING_INTEGRATION
+          </div>
+          
+          {/* Stacked wireframe graphics with dot matrix background */}
+          <div className="relative w-48 h-28 mx-auto mb-6 flex items-center justify-center">
+            <div className="absolute inset-0 dot-matrix opacity-40 rounded-xl" />
+            
+            {/* Background stacked card with rotation */}
+            <div className="absolute w-36 h-20 border border-slate-200 bg-slate-50/50 rounded-lg transform -rotate-6 translate-y-2 translate-x-2 flex items-center justify-start p-3 opacity-60">
+              <div className="w-6 h-6 rounded bg-slate-200 flex-shrink-0" />
+              <div className="ml-2 space-y-1.5 w-full">
+                <div className="h-1.5 w-1/2 bg-slate-200 rounded" />
+                <div className="h-1 w-3/4 bg-slate-200 rounded" />
+              </div>
+            </div>
+
+            {/* Front focused interactive card */}
+            <div className="absolute w-36 h-20 border border-[#F97316]/30 bg-white/90 rounded-lg shadow-sm transform rotate-3 flex items-center justify-start p-3 transition-transform group-hover:scale-105 duration-300">
+              {/* Dynamic amber blink indicator badge */}
+              <span className="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#F97316]/30 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-[#F97316]"></span>
+              </span>
+              <div className="w-6 h-6 rounded bg-orange-100 flex items-center justify-center text-[#F97316] font-mono text-xs font-bold">
+                &lt;/&gt;
+              </div>
+              <div className="ml-2 space-y-1.5 w-full">
+                <div className="h-1.5 w-2/3 bg-slate-300 rounded" />
+                <div className="h-1 w-5/6 bg-slate-200 rounded" />
+              </div>
+            </div>
+          </div>
+
+          <h4 className="font-sans font-extrabold text-slate-800 text-xl tracking-tight">
+            Engineering Footprints <span className="bg-gradient-to-r from-[#F97316] to-[#EA580C] bg-clip-text text-transparent">Inactive</span>
+          </h4>
+          <p className="text-xs text-slate-400 font-sans mt-2 max-w-sm mx-auto leading-relaxed">
+            Integrate your GitHub candidate footprint above to initiate automated semantic checks on documentation, test suites, and commit cadences.
           </p>
+
+          {/* Corner Micrometrics & Diagnostic Badges */}
+          <div className="mt-5 flex justify-center gap-2">
+            <span className="text-[10px] bg-slate-100 text-slate-600 px-3 py-1 rounded-full font-mono font-bold border border-slate-200">
+              ● CODE_COV: NULL
+            </span>
+            <span className="text-[10px] bg-amber-50 text-amber-700 px-3 py-1 rounded-full font-mono font-bold border border-amber-100">
+              ● RECRUITER_INDEX: UNLINKED
+            </span>
+          </div>
+
         </div>
       )}
 

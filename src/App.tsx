@@ -20,9 +20,10 @@ import {
   LayoutDashboard,
   Mail,
   Briefcase,
-  Sun,
-  Moon
+  AlertCircle,
+  X
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 import { DevScopeState, User as UserType, RoadmapItem, SkillValidation, GitHubProfile, LeetCodeProfile, ResumeData, ActivityLog } from './types';
 import AuthScreen from './components/AuthScreen';
@@ -75,23 +76,20 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [showReport, setShowReport] = useState(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [authErrorModal, setAuthErrorModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: 'google' | 'email';
+  } | null>(null);
 
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    return (localStorage.getItem('devscope_theme') as 'light' | 'dark') || 'light';
-  });
-
+  // Force Light Mode strictly across the application
   useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-    localStorage.setItem('devscope_theme', theme);
-  }, [theme]);
-
-  const toggleTheme = () => {
-    setTheme(prev => prev === 'light' ? 'dark' : 'light');
-  };
+    const root = document.documentElement;
+    root.classList.remove('dark');
+    root.classList.add('light');
+    localStorage.removeItem('devscope_theme');
+  }, []);
 
   // Initialize Authentication & Session Restore on Mount
   useEffect(() => {
@@ -100,8 +98,13 @@ export default function App() {
         setAccessToken(token);
         
         try {
-          const docRef = doc(db, 'users', firebaseUser.uid);
-          const docSnap = await getDoc(docRef);
+          const apiBase = window.location.origin.includes('run.app') ? window.location.origin : 'http://localhost:5000';
+          let response;
+          try {
+            response = await fetch(`${apiBase}/api/user/${firebaseUser.uid}`);
+          } catch (e) {
+            response = await fetch(`/api/user/${firebaseUser.uid}`);
+          }
           
           const parsedUser: UserType = {
             id: firebaseUser.uid,
@@ -111,8 +114,8 @@ export default function App() {
             joinedAt: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
           };
 
-          if (docSnap.exists()) {
-            const data = docSnap.data();
+          if (response && response.ok) {
+            const data = await response.json();
             setState({
               user: parsedUser,
               github: data.github || null,
@@ -132,7 +135,7 @@ export default function App() {
             }));
           }
         } catch (err) {
-          console.error('Firestore connection restore error:', err);
+          console.error('Database connection restore error:', err);
           const parsedUser: UserType = {
             id: firebaseUser.uid,
             email: firebaseUser.email || '',
@@ -155,32 +158,56 @@ export default function App() {
     localStorage.setItem('devscope_workspace_state', JSON.stringify(state));
   }, [state]);
 
-  // Sync state to Firestore database securely
+  // Sync state to standard backend API database securely with 1200ms debouncing
   useEffect(() => {
     if (!state.user) return;
     
     const syncToCloud = async () => {
+      const payload = {
+        uid: state.user!.id,
+        fullName: state.user!.fullName,
+        email: state.user!.email,
+        gitUsername: state.github?.username || '',
+        leetcodeUsername: state.leetcode?.username || '',
+        overallScore: state.overallScore,
+        github: state.github,
+        leetcode: state.leetcode,
+        resume: state.resume,
+        skillValidation: state.skillValidation,
+        roleReadiness: state.roleReadiness,
+        companyReadiness: state.companyReadiness,
+        roadmap: state.roadmap,
+        activities: state.activities
+      };
+
+      const apiBase = window.location.origin.includes('run.app') ? window.location.origin : 'http://localhost:5000';
       try {
-        const docRef = doc(db, 'users', state.user!.id);
-        await setDoc(docRef, {
-          uid: state.user!.id,
-          fullName: state.user!.fullName,
-          email: state.user!.email,
-          gitUsername: state.github?.username || '',
-          leetcodeUsername: state.leetcode?.username || '',
-          overallScore: state.overallScore,
-          updatedAt: new Date().toISOString(),
-          github: state.github,
-          leetcode: state.leetcode,
-          resume: state.resume,
-          skillValidation: state.skillValidation,
-          roleReadiness: state.roleReadiness,
-          companyReadiness: state.companyReadiness,
-          roadmap: state.roadmap,
-          activities: state.activities
-        });
+        let response;
+        try {
+          response = await fetch(`${apiBase}/api/user/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        } catch (err) {
+          response = await fetch('/api/user/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        }
+        
+        if (response && response.ok) {
+          const resData = await response.json();
+          if (resData.profile && resData.profile.overallScore !== state.overallScore) {
+            setState(prev => ({
+              ...prev,
+              overallScore: resData.profile.overallScore
+            }));
+          }
+        }
       } catch (err) {
-        console.error('Failed to sync placement profile to Firestore:', err);
+        console.error('Failed to sync placement profile to backend engine:', err);
       }
     };
 
@@ -236,6 +263,19 @@ export default function App() {
     }));
   };
 
+  const handleEnterDemoMode = () => {
+    setAuthErrorModal(null);
+    const demoUser: UserType = {
+      id: 'demo-simulated-user',
+      email: 'prakash.student@placement.edu',
+      fullName: 'Prakash Kumar (Demo Sandbox)',
+      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=150',
+      joinedAt: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    };
+    handleLogin(demoUser);
+    handlePrepopulateDemo();
+  };
+
   const handleConnectGoogle = async () => {
     try {
       const authResult = await googleSignIn();
@@ -279,7 +319,23 @@ export default function App() {
         }
       }
     } catch (err: any) {
-      alert(`Google Connection Failed: ${err.message}`);
+      console.error('Google Connection Failed:', err);
+      const isPopupClosed = err.message?.includes('popup-closed-by-user') || err.message?.includes('cancelled-popup-request');
+      if (isPopupClosed) {
+        setAuthErrorModal({
+          isOpen: true,
+          title: 'Google Popup Blocked or Closed',
+          message: 'Since this application is running inside a secure preview iframe, browser security may block Google\'s authentication popup or fail to communicate with it.',
+          type: 'google'
+        });
+      } else {
+        setAuthErrorModal({
+          isOpen: true,
+          title: 'Google Connection Failed',
+          message: err.message || 'An unexpected error occurred during Google Workspace connection.',
+          type: 'google'
+        });
+      }
     }
   };
 
@@ -761,7 +817,7 @@ export default function App() {
 
   // Render Auth screen first if no candidate session is active
   if (!state.user) {
-    return <AuthScreen onLogin={handleLogin} onGoogleSignIn={handleConnectGoogle} theme={theme} onToggleTheme={toggleTheme} />;
+    return <AuthScreen onLogin={handleLogin} onGoogleSignIn={handleConnectGoogle} />;
   }
 
   // Render printable full PDF document if report modal is triggered
@@ -774,20 +830,20 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F9FAFB] dark:bg-slate-950 text-gray-900 dark:text-slate-100 flex flex-col justify-between" id="app-workspace">
+    <div className="min-h-screen bg-blueprint flex flex-col justify-between transition-colors duration-200" id="app-workspace">
       
       {/* Top Header Row */}
-      <header className="px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 border-b border-[#E5E7EB] dark:border-slate-800 bg-white dark:bg-slate-900 print:hidden transition-colors duration-200">
+      <header className="px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 border-b border-border bg-surface print:hidden transition-colors duration-200">
         
         {/* Branding */}
         <div className="flex items-center gap-2">
-          <div className="bg-indigo-600 p-1.5 rounded text-white flex items-center justify-center">
+          <div className="bg-primary p-1.5 rounded text-white flex items-center justify-center">
             <Code className="w-5 h-5" />
           </div>
-          <span className="font-sans font-semibold tracking-tight text-xl text-gray-900 dark:text-white">
+          <span className="font-sans font-semibold tracking-tight text-xl text-text-primary">
             DevScope
           </span>
-          <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-full font-mono">
+          <span className="text-[10px] bg-background-secondary text-text-muted border border-border px-2 py-0.5 rounded-full font-mono">
             V1.0-LIVE
           </span>
         </div>
@@ -799,7 +855,7 @@ export default function App() {
           {!state.github && (
             <button
               onClick={handlePrepopulateDemo}
-              className="px-3 py-1.5 border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg text-xs font-semibold font-sans transition cursor-pointer"
+              className="px-3 py-1.5 border border-amber-300 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-950/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 text-amber-800 dark:text-amber-200 rounded-lg text-xs font-semibold font-sans transition cursor-pointer"
             >
               Populate Candidate Demo
             </button>
@@ -814,32 +870,23 @@ export default function App() {
               }
               setShowReport(true);
             }}
-            className="px-3.5 py-1.5 bg-gray-900 hover:bg-gray-800 dark:bg-indigo-600 dark:hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold font-sans transition flex items-center gap-1 cursor-pointer"
+            className="px-3.5 py-1.5 bg-primary hover:bg-primary-hover text-white rounded-lg text-xs font-semibold font-sans transition flex items-center gap-1 cursor-pointer shadow-sm"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Generate Report PDF</span>
           </button>
 
-          {/* Global Theme Toggle Button */}
-          <button
-            onClick={toggleTheme}
-            className="p-1.5 text-gray-400 hover:text-gray-600 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition cursor-pointer"
-            title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
-            aria-label="Theme toggle"
-          >
-            {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4 text-amber-400" />}
-          </button>
-
           {/* User logout */}
-          <div className="flex items-center gap-2 border-l border-gray-200 dark:border-slate-800 pl-3">
-            <div className="text-right hidden md:block">
-              <div className="text-xs font-semibold text-gray-800 dark:text-slate-200 font-sans leading-none">{state.user.fullName}</div>
-              <span className="text-[10px] text-gray-400 dark:text-slate-400 font-sans mt-0.5 inline-block">{state.user.email}</span>
+          <div className="flex items-center gap-2 border-l border-border pl-3">
+            <div className="text-right hidden md:block ml-1">
+              <div className="text-xs font-semibold text-text-primary font-sans leading-none">{state.user.fullName}</div>
+              <span className="text-[10px] text-text-muted font-sans mt-0.5 inline-block">{state.user.email}</span>
             </div>
+            
             <button
               onClick={handleLogout}
               title="Sign Out Session"
-              className="p-1.5 text-gray-400 hover:text-gray-600 dark:text-slate-400 dark:hover:text-slate-200 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              className="p-1.5 text-text-muted hover:text-text-primary rounded-lg hover:bg-surface-hover transition cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -850,7 +897,7 @@ export default function App() {
       </header>
 
       {/* Primary Tab Navigation Row */}
-      <nav className="border-b border-[#E5E7EB] dark:border-slate-800 bg-white dark:bg-slate-900 px-6 print:hidden transition-colors duration-200">
+      <nav className="border-b border-border bg-surface px-6 print:hidden transition-colors duration-200">
         <div className="flex gap-4 overflow-x-auto no-scrollbar py-1">
           {[
             { id: 'overview', label: 'Dashboard', icon: <LayoutDashboard className="w-4 h-4" /> },
@@ -868,8 +915,8 @@ export default function App() {
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-1.5 py-3.5 px-1 text-xs font-medium border-b-2 font-sans transition flex-shrink-0 cursor-pointer ${
                 activeTab === tab.id 
-                  ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400' 
-                  : 'border-transparent text-gray-400 hover:text-gray-600 dark:text-slate-400 dark:hover:text-slate-200'
+                  ? 'border-primary text-primary font-semibold' 
+                  : 'border-transparent text-text-muted hover:text-text-secondary'
               }`}
             >
               {tab.icon}
@@ -981,15 +1028,93 @@ export default function App() {
           <WorkspacePanel
             accessToken={accessToken}
             onConnectGoogle={handleConnectGoogle}
-            skills={state.resume?.detectedSkills || []}
+            skills={state.resume?.skills || []}
             overallScore={state.overallScore}
           />
         )}
 
       </main>
 
+      {/* Custom Auth Error Overlay Modal */}
+      <AnimatePresence>
+        {authErrorModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative overflow-hidden"
+            >
+              <button
+                onClick={() => setAuthErrorModal(null)}
+                className="absolute top-4 right-4 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-start gap-4 mb-5">
+                <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl shrink-0">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold font-sans text-slate-900">
+                    {authErrorModal.title}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-sans mt-1">
+                    System Authentication Insight
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4 mb-6">
+                <p className="text-sm text-slate-600 leading-relaxed font-sans">
+                  {authErrorModal.message}
+                </p>
+
+                {authErrorModal.type === 'google' && (
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-4.5 space-y-3">
+                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider font-sans">
+                      💡 Recommended Action
+                    </h4>
+                    <ul className="text-xs text-slate-600 space-y-2 list-decimal list-inside font-sans">
+                      <li>
+                        Click the <strong className="text-slate-800">"Open in New Tab"</strong> icon at the very top right of Google AI Studio.
+                      </li>
+                      <li>
+                        Authorize your Google Workspace account directly in that standalone tab context.
+                      </li>
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col sm:flex-row justify-end gap-3 border-t border-slate-100 pt-4">
+                <button
+                  onClick={() => setAuthErrorModal(null)}
+                  className="px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-xs font-semibold font-sans transition cursor-pointer"
+                >
+                  Close Window
+                </button>
+                <button
+                  onClick={handleEnterDemoMode}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold font-sans transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-indigo-600/10"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>Launch Sandbox Demo Mode</span>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Bottom Footer Row */}
-      <footer className="py-6 border-t border-gray-200 dark:border-slate-800 text-center text-xs text-gray-400 dark:text-slate-500 bg-white dark:bg-slate-900 print:hidden space-y-1 transition-colors duration-200">
+      <footer className="py-6 border-t border-border text-center text-xs text-text-muted bg-surface print:hidden space-y-1 transition-colors duration-200">
         <div>DevScope © 2026. Designed for Placement Preparation Cells.</div>
         <div>All profile validations are mapped to corporate hiring rubrics.</div>
       </footer>

@@ -68,7 +68,7 @@ service cloud.firestore {
     // Collection: Users
     match /users/{userId} {
       allow get: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidUserProfile(incoming()) && isVerifiedUser() && incoming().uid == userId;
+      allow create: if isOwner(userId) && isValidUserProfile(incoming()) && incoming().uid == userId;
       allow update: if isOwner(userId) && isValidUserProfile(incoming()) && incoming().uid == existing().uid && incoming().email == existing().email;
       allow delete: if false; // Profiles are permanent inside placement records
 

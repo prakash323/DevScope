@@ -5,15 +5,21 @@
 
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
+import cors from 'cors';
+import mongoose from 'mongoose';
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
+
+// Enable CORS for cross-origin requests from frontend localhost
+app.use(cors());
 
 // Enable JSON body parsing with reasonable limits for resume texts
 app.use(express.json({ limit: '10mb' }));
@@ -28,12 +34,12 @@ const ai = new GoogleGenAI({
   }
 });
 
-// Helper for parsing JSON from Gemini safely
+// Helper for parsing JSON from Gemini safely with ultra-resilience
 function cleanAndParseJSON(text: string | undefined): any {
   if (!text) return null;
+  let cleaned = text.trim();
   try {
-    // Remove markdown code fences if present
-    let cleaned = text.trim();
+    // 1. Remove markdown code fences if present
     if (cleaned.startsWith('```json')) {
       cleaned = cleaned.substring(7);
     } else if (cleaned.startsWith('```')) {
@@ -42,12 +48,148 @@ function cleanAndParseJSON(text: string | undefined): any {
     if (cleaned.endsWith('```')) {
       cleaned = cleaned.substring(0, cleaned.length - 3);
     }
+    cleaned = cleaned.trim();
+
+    // 2. Extract only the valid JSON portion if there's surrounding text
+    const firstBrace = cleaned.indexOf('{');
+    const firstBracket = cleaned.indexOf('[');
+    let jsonStart = -1;
+    let jsonEnd = -1;
+
+    if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+      jsonStart = firstBrace;
+      jsonEnd = cleaned.lastIndexOf('}');
+    } else if (firstBracket !== -1) {
+      jsonStart = firstBracket;
+      jsonEnd = cleaned.lastIndexOf(']');
+    }
+
+    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+      cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
+    }
+
+    // 3. Strip inline single-line JavaScript comments (e.g. // comment)
+    // Be careful not to strip URL protocols (like https://)
+    cleaned = cleaned.replace(/(?<!https?:)\/\/.*$/gm, '');
+
+    // 4. Strip multi-line comments (e.g. /* comment */)
+    cleaned = cleaned.replace(/\/\*[\s\S]*?\*\//g, '');
+
+    // 5. Remove trailing commas in objects and arrays before closed braces/brackets
+    cleaned = cleaned.replace(/,\s*([\]}])/g, '$1');
+
     return JSON.parse(cleaned.trim());
   } catch (error) {
     console.error('JSON Parsing Error in Gemini Output:', error, '\nRaw text was:', text);
-    // Return structured fallback
-    return null;
+    try {
+      // Secondary aggressive clean pass
+      let ultraClean = cleaned
+        .replace(/(?<!https?:)\/\/.*$/gm, '')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/,\s*([\]}])/g, '$1')
+        .trim();
+      return JSON.parse(ultraClean);
+    } catch (innerError) {
+      console.error('Secondary aggressive JSON parsing also failed:', innerError);
+      return null;
+    }
   }
+}
+
+// Mongoose database models and interfaces
+interface IUserProfile {
+  uid: string;
+  fullName?: string;
+  email?: string;
+  gitUsername?: string;
+  leetcodeUsername?: string;
+  overallScore?: number;
+  github?: Record<string, any>;
+  leetcode?: Record<string, any>;
+  resume?: Record<string, any>;
+  skillValidation?: any[];
+  roleReadiness?: any[];
+  companyReadiness?: any[];
+  roadmap?: Record<string, any>;
+  activities?: any[];
+  updatedAt?: string;
+}
+
+const userProfileSchema = new mongoose.Schema<IUserProfile>({
+  uid: { type: String, required: true, unique: true, index: true },
+  fullName: { type: String },
+  email: { type: String },
+  gitUsername: { type: String },
+  leetcodeUsername: { type: String },
+  overallScore: { type: Number },
+  github: { type: mongoose.Schema.Types.Mixed },
+  leetcode: { type: mongoose.Schema.Types.Mixed },
+  resume: { type: mongoose.Schema.Types.Mixed },
+  skillValidation: [mongoose.Schema.Types.Mixed],
+  roleReadiness: [mongoose.Schema.Types.Mixed],
+  companyReadiness: [mongoose.Schema.Types.Mixed],
+  roadmap: { type: mongoose.Schema.Types.Mixed },
+  activities: [mongoose.Schema.Types.Mixed],
+  updatedAt: { type: String }
+}, { bufferCommands: false });
+
+const UserProfile = mongoose.model<IUserProfile>('UserProfile', userProfileSchema);
+
+// Local filesystem fallback storage helper in case MongoDB is offline or unreachable
+const LOCAL_DB_DIR = path.join(process.cwd(), 'data_fallback');
+if (!fs.existsSync(LOCAL_DB_DIR)) {
+  fs.mkdirSync(LOCAL_DB_DIR, { recursive: true });
+}
+
+function getLocalProfilePath(uid: string): string {
+  return path.join(LOCAL_DB_DIR, `profile_${uid}.json`);
+}
+
+async function saveProfileFallback(uid: string, profileData: any): Promise<any> {
+  const filePath = getLocalProfilePath(uid);
+  let existing: any = {};
+  if (fs.existsSync(filePath)) {
+    try {
+      existing = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } catch (e) {
+      existing = {};
+    }
+  }
+  
+  const updatedAt = new Date().toISOString();
+  const merged = { ...existing, ...profileData, uid, updatedAt };
+  
+  // Calculate pre-save score
+  let totalScore = 40;
+  let componentsCount = 1;
+  if (merged.github && merged.github.overallGitHubScore) {
+    totalScore += merged.github.overallGitHubScore;
+    componentsCount++;
+  }
+  if (merged.leetcode && merged.leetcode.overallLeetCodeScore) {
+    totalScore += merged.leetcode.overallLeetCodeScore;
+    componentsCount++;
+  }
+  if (merged.resume && merged.resume.atsScore) {
+    totalScore += merged.resume.atsScore;
+    componentsCount++;
+  }
+  merged.overallScore = Math.round(totalScore / componentsCount);
+  
+  fs.writeFileSync(filePath, JSON.stringify(merged, null, 2), 'utf8');
+  return merged;
+}
+
+async function getProfileFallback(uid: string): Promise<any | null> {
+  const filePath = getLocalProfilePath(uid);
+  if (fs.existsSync(filePath)) {
+    try {
+      return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
 }
 
 // API Routes
@@ -55,6 +197,121 @@ function cleanAndParseJSON(text: string | undefined): any {
 // Route A: Simple Health Check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
+});
+
+// Database Synchronization & Query Endpoints
+
+// POST '/api/user/sync': Receives the state payload, atomically saves/updates by uid, and updates updatedAt.
+app.post('/api/user/sync', async (req, res) => {
+  const { uid, ...profileData } = req.body;
+  if (!uid) {
+    return res.status(400).json({ error: 'uid parameter is required for workspace sync' });
+  }
+
+  // If MongoDB is offline, use filesystem fallback immediately
+  if (mongoose.connection.readyState !== 1) {
+    try {
+      console.log(`[Database Fallback] Saving profile for UID ${uid} to local filesystem.`);
+      const localProfile = await saveProfileFallback(uid, profileData);
+      return res.json({ success: true, profile: localProfile });
+    } catch (fallbackError: any) {
+      console.error('Local fallback sync failed:', fallbackError);
+      return res.status(500).json({ error: fallbackError.message || 'Synchronization fallback failed' });
+    }
+  }
+
+  try {
+    const updatedAt = new Date().toISOString();
+    
+    // Also compute overallScore pre-save
+    let totalScore = 40;
+    let componentsCount = 1;
+    if (profileData.github && profileData.github.overallGitHubScore) {
+      totalScore += profileData.github.overallGitHubScore;
+      componentsCount++;
+    }
+    if (profileData.leetcode && profileData.leetcode.overallLeetCodeScore) {
+      totalScore += profileData.leetcode.overallLeetCodeScore;
+      componentsCount++;
+    }
+    if (profileData.resume && profileData.resume.atsScore) {
+      totalScore += profileData.resume.atsScore;
+      componentsCount++;
+    }
+    const overallScore = Math.round(totalScore / componentsCount);
+
+    const updatedProfile = await UserProfile.findOneAndUpdate(
+      { uid },
+      { ...profileData, overallScore, updatedAt },
+      { upsert: true, new: true }
+    );
+    
+    // Keep local copy in sync
+    try {
+      await saveProfileFallback(uid, profileData);
+    } catch (e) {
+      // Ignore local write failure when MongoDB is primary
+    }
+
+    res.json({ success: true, profile: updatedProfile });
+  } catch (error: any) {
+    console.warn('MongoDB sync failed, attempting filesystem fallback:', error.message || error);
+    try {
+      const localProfile = await saveProfileFallback(uid, profileData);
+      res.json({ success: true, profile: localProfile });
+    } catch (fallbackError: any) {
+      console.error('All database sync paths failed:', fallbackError);
+      res.status(500).json({ error: error.message || 'Synchronization failed' });
+    }
+  }
+});
+
+// GET '/api/user/:uid': Fetches and returns the profile by uid.
+app.get('/api/user/:uid', async (req, res) => {
+  const { uid } = req.params;
+  if (!uid) {
+    return res.status(400).json({ error: 'uid parameter is required' });
+  }
+
+  // If MongoDB is offline, use filesystem fallback immediately
+  if (mongoose.connection.readyState !== 1) {
+    try {
+      console.log(`[Database Fallback] Reading profile for UID ${uid} from local filesystem.`);
+      const localProfile = await getProfileFallback(uid);
+      if (!localProfile) {
+        return res.status(404).json({ error: `User profile with UID ${uid} not found locally` });
+      }
+      return res.json(localProfile);
+    } catch (fallbackError: any) {
+      console.error('Local fallback read failed:', fallbackError);
+      return res.status(500).json({ error: fallbackError.message || 'Fetch fallback failed' });
+    }
+  }
+
+  try {
+    const profile = await UserProfile.findOne({ uid });
+    if (!profile) {
+      // Check local filesystem before failing
+      const localProfile = await getProfileFallback(uid);
+      if (localProfile) {
+        return res.json(localProfile);
+      }
+      return res.status(404).json({ error: `User profile with UID ${uid} not found` });
+    }
+    res.json(profile);
+  } catch (error: any) {
+    console.warn(`MongoDB fetch failed for UID ${uid}, trying local filesystem:`, error.message || error);
+    try {
+      const localProfile = await getProfileFallback(uid);
+      if (!localProfile) {
+        return res.status(404).json({ error: `User profile with UID ${uid} not found in fallback storage` });
+      }
+      res.json(localProfile);
+    } catch (fallbackError: any) {
+      console.error('All database fetch paths failed:', fallbackError);
+      res.status(500).json({ error: error.message || 'Fetch failed' });
+    }
+  }
 });
 
 // Route B: GitHub Profile Analysis & Rule Engine
@@ -1174,6 +1431,21 @@ ${company} is an active technology employer that focuses on modern full-stack de
 
 // Serve React Frontend & Integrate Vite Server
 async function startServer() {
+  // Connect securely to MongoDB using Mongoose with fast failover parameters
+  const mongoURI = 'mongodb://localhost:27017/';
+  try {
+    console.log(`Connecting to local MongoDB instance: ${mongoURI}`);
+    // Disable buffering globally in mongoose
+    mongoose.set('bufferCommands', false);
+    await mongoose.connect(mongoURI, {
+      dbName: 'devscope',
+      serverSelectionTimeoutMS: 2000
+    });
+    console.log('MongoDB successfully connected and integrated securely under "devscope" database.');
+  } catch (dbError: any) {
+    console.warn('MongoDB connection on startup failed or timed out. Gracefully routing all telemetry queries to the secure local filesystem fallback database.');
+  }
+
   if (process.env.NODE_ENV !== 'production') {
     // Development Mode
     const vite = await createViteServer({

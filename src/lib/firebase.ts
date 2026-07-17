@@ -10,7 +10,10 @@ import {
   GoogleAuthProvider, 
   onAuthStateChanged, 
   User as FirebaseUser,
-  signOut
+  signOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile
 } from 'firebase/auth';
 import { 
   getFirestore, 
@@ -109,7 +112,7 @@ export async function testConnection() {
 
 // Initialize Auth State & Token Restoration
 export const initAuth = (
-  onAuthSuccess?: (user: FirebaseUser, token: string) => void,
+  onAuthSuccess?: (user: FirebaseUser, token: string | null) => void,
   onAuthFailure?: () => void
 ) => {
   // Load token from memory/cache safety first
@@ -120,11 +123,8 @@ export const initAuth = (
 
   return onAuthStateChanged(auth, async (user: FirebaseUser | null) => {
     if (user) {
-      if (cachedAccessToken) {
-        if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
-      } else if (!isSigningIn) {
-        cachedAccessToken = null;
-        if (onAuthFailure) onAuthFailure();
+      if (onAuthSuccess) {
+        onAuthSuccess(user, cachedAccessToken);
       }
     } else {
       cachedAccessToken = null;
@@ -164,4 +164,19 @@ export const logout = async () => {
   await signOut(auth);
   cachedAccessToken = null;
   localStorage.removeItem('google_workspace_access_token');
+};
+
+// Register with email and password
+export const registerWithEmailPassword = async (email: string, password: string, fullName: string): Promise<FirebaseUser> => {
+  const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+  await updateProfile(userCredential.user, {
+    displayName: fullName
+  });
+  return userCredential.user;
+};
+
+// Login with email and password
+export const loginWithEmailPassword = async (email: string, password: string): Promise<FirebaseUser> => {
+  const userCredential = await signInWithEmailAndPassword(auth, email, password);
+  return userCredential.user;
 };
